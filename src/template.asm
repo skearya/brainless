@@ -22,6 +22,11 @@ section .text
     syscall
 %endmacro
 
+%macro loop_check 1
+    cmp byte [buffer + r8], 0
+    jne %1
+%endmacro
+
 _start:
     mov r8, 0
 ;   code
