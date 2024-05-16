@@ -57,7 +57,7 @@ fn parse(source: &str) -> Vec<Token> {
     tokens
 }
 
-fn to_asm(mut loops: u32, tokens: &Vec<Token>) -> String {
+fn to_asm(loops: &mut u32, tokens: &Vec<Token>) -> String {
     tokens
         .iter()
         .map(|token| match token {
@@ -68,26 +68,27 @@ fn to_asm(mut loops: u32, tokens: &Vec<Token>) -> String {
             Token::GetChar => "get".into(),
             Token::PutChar => "put".into(),
             Token::Loop(tokens) => {
-                loops += 5;
+                *loops += 2;
+                let current = *loops;
 
                 format!(
-                    "jmp .L{}\n.L{}:\n{}.L{}:\nloop_check .L{}",
-                    loops,
-                    loops + 1,
-                    to_asm(loops + 1, tokens),
-                    loops,
-                    loops + 1
+                    "jmp .L{}\n.L{}:\n{}.L{}:\n    loop_check .L{}",
+                    current,
+                    current + 1,
+                    to_asm(loops, tokens),
+                    current,
+                    current + 1
                 )
             }
         })
-        .map(|line| line + "\n")
+        .map(|line| format!("    {line}\n"))
         .collect()
 }
 
 fn main() {
     let template = include_str!("template.asm");
     let source: String = filter_chars(&fs::read_to_string("./src/source.bf").unwrap());
-    let asm = to_asm(0, &parse(&source));
+    let asm = to_asm(&mut 0, &parse(&source));
 
     match fs::write("output.asm", template.replace(";   code", &asm)) {
         Ok(_) => println!("wrote asm"),
