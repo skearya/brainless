@@ -1,4 +1,6 @@
-use std::fs;
+use std::{env, fs};
+
+const TEMPLATE: &'static str = include_str!("template.asm");
 
 #[derive(Debug)]
 enum Token {
@@ -85,49 +87,87 @@ fn to_asm(loops: &mut u32, tokens: &Vec<Token>) -> String {
         .collect()
 }
 
-fn main() {
-    let template = include_str!("template.asm");
-    let source: String = filter_chars(&fs::read_to_string("./src/source.bf").unwrap());
+fn compile(input_path: &str, output_path: &str) {
+    let source = filter_chars(&fs::read_to_string(input_path).unwrap());
     let asm = to_asm(&mut 0, &parse(&source));
 
-    match fs::write("output.asm", template.replace(";   code", &asm)) {
-        Ok(_) => println!("wrote asm"),
-        Err(e) => eprintln!("error writing file: {e}"),
+    if let Err(e) = fs::write(output_path, TEMPLATE.replace(";   code", &asm)) {
+        eprintln!("error writing file: {e}");
     }
+}
+
+fn main() {
+    compile(
+        &env::args().nth(1).expect("no path given"),
+        &env::args().nth(2).unwrap_or("./output.asm".to_owned()),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
-    fn reverse_map(tokens: &Vec<Token>) -> String {
-        tokens
-            .iter()
-            .map(|token| match token {
-                Token::IncPtr => ">".into(),
-                Token::DecPtr => "<".into(),
-                Token::IncVal => "+".into(),
-                Token::DecVal => "-".into(),
-                Token::GetChar => ",".into(),
-                Token::PutChar => ".".into(),
-                Token::Loop(tokens) => format!("[{}]", reverse_map(tokens)),
-            })
-            .collect()
+    fn run(name: &str, args: &[&str]) -> String {
+        let output = Command::new(name)
+            .args(args)
+            .output()
+            .unwrap_or_else(|e| panic!("failed to execute process: {}", e));
+
+        if !output.status.success() {
+            panic!(
+                "{name} failed: {}",
+                core::str::from_utf8(&output.stderr).unwrap()
+            );
+        }
+
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    fn verify(name: &str) {
+        let path = format!("./src/tests/{name}");
+
+        compile(
+            &format!("{path}/main.bf"),
+            &format!("./src/tests/output/{name}.asm"),
+        );
+        run(
+            "nasm",
+            &[
+                "-f",
+                "elf64",
+                &format!("./src/tests/output/{name}.asm"),
+                "-o",
+                &format!("./src/tests/output/{name}.o"),
+            ],
+        );
+        run(
+            "ld",
+            &[
+                &format!("./src/tests/output/{name}.o"),
+                "-o",
+                &format!("./src/tests/output/{name}"),
+            ],
+        );
+
+        assert_eq!(
+            run(&format!("./src/tests/output/{name}"), &[]),
+            fs::read_to_string(path + "/output.txt").unwrap()
+        )
     }
 
     #[test]
-    fn parse_squares() {
-        assert_eq!(
-            reverse_map(&parse(&filter_chars(include_str!("tests/squares.bf")))),
-            filter_chars(include_str!("tests/squares.bf"))
-        );
+    fn hello() {
+        verify("hello");
     }
 
     #[test]
-    fn parse_hello_world() {
-        assert_eq!(
-            reverse_map(&parse(&filter_chars(include_str!("tests/hello.bf")))),
-            filter_chars(include_str!("tests/hello.bf"))
-        );
+    fn mandlebrot() {
+        verify("mandlebrot");
+    }
+
+    #[test]
+    fn squares() {
+        verify("squares");
     }
 }
