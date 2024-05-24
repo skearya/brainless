@@ -1,8 +1,8 @@
-use std::{env, fs};
+use std::{env, fs, iter::Peekable};
 
 const TEMPLATE: &'static str = include_str!("template.asm");
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Token {
     IncPtr,
     DecPtr,
@@ -59,14 +59,40 @@ fn parse(source: &str) -> Vec<Token> {
     tokens
 }
 
+fn count_multiple<'a>(
+    tokens: &mut Peekable<impl Iterator<Item = &'a Token>>,
+    token: &Token,
+) -> u32 {
+    let mut count = 1;
+
+    while let Some(next) = tokens.peek() {
+        if *next == token {
+            count += 1;
+            tokens.next();
+        } else {
+            break;
+        }
+    }
+
+    count
+}
+
 fn to_asm(loops: &mut u32, tokens: &Vec<Token>) -> String {
-    tokens
-        .iter()
-        .map(|token| match token {
-            Token::IncPtr => "inc r8".into(),
-            Token::DecPtr => "dec r8".into(),
-            Token::IncVal => "inc byte [buffer + r8]".into(),
-            Token::DecVal => "dec byte [buffer + r8]".into(),
+    let mut tokens = tokens.iter().peekable();
+    let mut asm = vec![];
+
+    while let Some(token) = tokens.next() {
+        let code = match token {
+            Token::IncPtr => format!("add r8, {}", count_multiple(&mut tokens, token)),
+            Token::DecPtr => format!("sub r8, {}", count_multiple(&mut tokens, token)),
+            Token::IncVal => format!(
+                "add byte [buffer + r8], {}",
+                count_multiple(&mut tokens, token)
+            ),
+            Token::DecVal => format!(
+                "sub byte [buffer + r8], {}",
+                count_multiple(&mut tokens, token)
+            ),
             Token::GetChar => "get".into(),
             Token::PutChar => "put".into(),
             Token::Loop(tokens) => {
@@ -82,7 +108,12 @@ fn to_asm(loops: &mut u32, tokens: &Vec<Token>) -> String {
                     current + 1
                 )
             }
-        })
+        };
+
+        asm.push(code);
+    }
+
+    asm.into_iter()
         .map(|line| format!("    {line}\n"))
         .collect()
 }
